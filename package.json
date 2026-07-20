@@ -1,8 +1,8 @@
 {
   "name": "@llanesleonardo/create-saas",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "private": false,
-  "description": "Scaffold a new SaaS app on @llanesleonardo/saas-platform + saas-product-shell (independent of PeopleForms)",
+  "description": "Scaffold a new SaaS app on @llanesleonardo/saas-platform + saas-product-shell (independent of PeopleForms). Epic 13: wizard, domain stubs, CI guard, template flags, pin helper.",
   "type": "module",
   "bin": {
     "create-saas": "./bin/create-saas.mjs",

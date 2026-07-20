@@ -5,99 +5,37 @@
  * Scaffold a new SaaS app on chassis + product shell — independent of PeopleForms.
  *
  *   npx @llanesleonardo/create-saas --name acme-crm --prefix acme_
- *   npm create @llanesleonardo/saas -- --name acme --prefix acme_   # after publish
+ *   npx @llanesleonardo/create-saas --wizard
  *
- * Creates a standalone Next.js app in ./<name> (or --dir). Pins published packages
- * from GitHub Packages. Does not fork PeopleForms / FormBuilder.
+ * HISTORY: Epic 13 High/Medium — brand wizard, --entity stubs, CI import-guard,
+ * --with-stripe/--with-clerk/--db=postgres, update-pins / add-domain subcommands.
+ * Does not fork PeopleForms / FormBuilder.
  */
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import {
+  die,
+  ensureDir,
+  write,
+  slugify,
+  titleCase,
+  ensurePrefix,
+  parseArgs,
+  usage,
+  runWizard,
+  normalizeDb,
+} from "./lib/shared.mjs";
+import { generateDomainStub } from "./lib/domain-stub.mjs";
+import { writeCiAssets } from "./lib/ci.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PKG_ROOT = path.join(__dirname, "..");
 const TEMPLATE = path.join(PKG_ROOT, "templates", "app-shell");
 const DEPLOY_TEMPLATES = path.join(PKG_ROOT, "templates");
 
-function parseArgs(argv) {
-  const out = {
-    name: null,
-    prefix: null,
-    productName: null,
-    port: 3000,
-    db: "sqlite",
-    dir: null,
-    deploy: true,
-  };
-  for (let i = 0; i < argv.length; i++) {
-    const a = argv[i];
-    const next = () => argv[++i];
-    if (a === "--name") out.name = next();
-    else if (a === "--prefix") out.prefix = next();
-    else if (a === "--product-name") out.productName = next();
-    else if (a === "--port") out.port = Number(next());
-    else if (a === "--db") out.db = next();
-    else if (a === "--dir" || a === "--out") out.dir = next();
-    else if (a === "--with-deploy") out.deploy = true;
-    else if (a === "--no-deploy") out.deploy = false;
-    else if (a === "--help" || a === "-h") out.help = true;
-  }
-  return out;
-}
-
-function usage() {
-  console.log(`Usage:
-  npx @llanesleonardo/create-saas --name <slug> --prefix <cookie_api_prefix_>
-
-Options:
-  --product-name "Display Name"   default: title-cased --name
-  --dir <path>                    default: ./<slug> under current directory
-  --port 3000                     default: 3000
-  --db sqlite|memory              default: sqlite
-  --with-deploy                   Docker + multi-cloud stubs (default)
-  --no-deploy                     skip Docker / deploy templates
-
-Requires NODE_AUTH_TOKEN (GitHub PAT with read:packages) for npm install afterward.
-`);
-}
-
-function die(msg) {
-  console.error(`create-saas: ${msg}`);
-  process.exit(1);
-}
-
-function slugify(name) {
-  return name
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-}
-
-function titleCase(slug) {
-  return slug
-    .split("-")
-    .filter(Boolean)
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-    .join(" ");
-}
-
-function ensurePrefix(prefix) {
-  const p = prefix.trim();
-  if (!/^[a-z][a-z0-9_]*_$/i.test(p)) {
-    die(`--prefix must look like "acme_" (letters/numbers/underscore, end with _)`);
-  }
-  return p.toLowerCase();
-}
-
-function ensureDir(p) {
-  fs.mkdirSync(p, { recursive: true });
-}
-
-function write(file, content) {
-  ensureDir(path.dirname(file));
-  fs.writeFileSync(file, content, "utf8");
-}
+const PLATFORM_PIN = "0.3.0";
+const SHELL_PIN = "0.2.2";
 
 function copyDir(src, dest, { skip = [] } = {}) {
   ensureDir(dest);
@@ -182,7 +120,11 @@ function applyDeployTemplates(dest, { slug, productName, port }) {
   copyTplTree(path.join(DEPLOY_TEMPLATES, "scripts"), path.join(dest, "scripts"), tokens);
 }
 
-function shellTs({ productName, prefix, workspaceCookie, db }) {
+function shellTs({ productName, apiKeyPrefix, workspaceCookie, db }) {
+  const providerType =
+    db === "postgres"
+      ? `"memory" | "sqlite" | "postgres"`
+      : `"memory" | "sqlite"`;
   return `import {
   createShellRegistration,
   getShellDb,
@@ -191,7 +133,7 @@ function shellTs({ productName, prefix, workspaceCookie, db }) {
 
 const { ensureRegistered } = createShellRegistration({
   productName: ${JSON.stringify(productName)},
-  apiKeyPrefix: ${JSON.stringify(prefix)},
+  apiKeyPrefix: ${JSON.stringify(apiKeyPrefix)},
   workspaceCookieName: ${JSON.stringify(workspaceCookie)},
   scopes: ["demo:read", "demo:write"],
   features: ["demo"],
@@ -203,7 +145,7 @@ ensureRegistered();
 
 export function getDb() {
   const provider =
-    (process.env.DATABASE_PROVIDER as "memory" | "sqlite" | undefined) ??
+    (process.env.DATABASE_PROVIDER as ${providerType} | undefined) ??
     ${JSON.stringify(db)};
   return getShellDb({
     provider,
@@ -244,56 +186,54 @@ export const config = {
 `;
 }
 
-function envExample({ slug, db, port }) {
+function envExample({ slug, db, port, withStripe, withClerk, apiKeyPrefix }) {
+  const stripeBlock = withStripe
+    ? `# Stripe
+STRIPE_SECRET_KEY=sk_test_...
+STRIPE_PRICE_PRO=price_...
+STRIPE_PRICE_BUSINESS=price_...
+STRIPE_WEBHOOK_SECRET=whsec_...
+`
+    : `# Stripe (enable with create-saas --with-stripe)
+# STRIPE_SECRET_KEY=
+`;
+
+  const clerkBlock = withClerk
+    ? `# Clerk IdP stub (wire @clerk/nextjs yourself — see src/lib/clerk-stub.ts)
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_...
+CLERK_SECRET_KEY=sk_test_...
+`
+    : `# Clerk (enable with create-saas --with-clerk)
+# NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=
+# CLERK_SECRET_KEY=
+`;
+
   return `# Generated by @llanesleonardo/create-saas — copy to .env.local
 DEPLOYMENT_MODE=saas
 DATABASE_PROVIDER=${db}
 SQLITE_PATH=./data/${slug}.db
 NEXT_PUBLIC_APP_URL=http://localhost:${port}
+# API keys issued by this product use prefix: ${apiKeyPrefix}
 
 # Postgres (when DATABASE_PROVIDER=postgres)
 # DATABASE_URL=postgresql://user:pass@localhost:5432/${slug}
 # DATABASE_SSL=0
 
-# Stripe (optional until paid plans)
-# STRIPE_SECRET_KEY=sk_test_...
-# STRIPE_PRICE_PRO=price_...
-# STRIPE_PRICE_BUSINESS=price_...
-# STRIPE_WEBHOOK_SECRET=whsec_...
-
+${stripeBlock}
+${clerkBlock}
 # Email (optional — Resend)
 # RESEND_API_KEY=re_...
 # RESEND_FROM_EMAIL="My App <onboarding@resend.dev>"
 
-# Secrets at rest (required in saas/production/strict) — openssl rand -base64 32
+# Secrets at rest — openssl rand -base64 32
 # SECRETS_ENCRYPTION_KEY=
 
-# Rate limits (requests per minute)
-# RATE_LIMIT_LOGIN=10
-# RATE_LIMIT_SUBMIT=60
-# TRUSTED_PROXY=1
+# SESSION_SECRET — min 32 chars in production
+SESSION_SECRET=dev-only-change-me-to-a-long-random-string
 
-# Object storage (chassis @llanesleonardo/saas-platform/storage)
-# local (default) | azure | s3
+# Object storage (chassis)
 # STORAGE_PROVIDER=local
-#
-# Azure Blob (ACA / managed identity) — also: npm i @azure/storage-blob @azure/identity
-# STORAGE_PROVIDER=azure
-# AZURE_STORAGE_ACCOUNT_NAME=
-# AZURE_STORAGE_BLOB_ENDPOINT=https://<account>.blob.core.windows.net
-# AZURE_STORAGE_CONTAINER_UPLOADS=uploads
-# AZURE_STORAGE_CONTAINER_POLICIES=policies
-# AZURE_CLIENT_ID=
-# AZURE_STORAGE_PUBLIC_URL=
-#
-# S3-compatible (AWS / DO Spaces / GCS HMAC) — also: npm i @aws-sdk/client-s3
-# STORAGE_PROVIDER=s3
-# S3_ENDPOINT=https://s3.<region>.amazonaws.com
-# S3_BUCKET=
-# S3_ACCESS_KEY_ID=
-# S3_SECRET_ACCESS_KEY=
-# S3_PUBLIC_URL=
-# S3_REGION=auto
+# STORAGE_PROVIDER=azure | s3  (see chassis docs)
 
 # Logging
 # LOG_DIR=./logsfiles
@@ -301,7 +241,24 @@ NEXT_PUBLIC_APP_URL=http://localhost:${port}
 `;
 }
 
-function readme({ productName, slug, port, deploy }) {
+function clerkStubTs() {
+  return `/**
+ * Clerk IdP stub (Epic 13 / --with-clerk).
+ * HISTORY: scaffold only — install @clerk/nextjs and wire providers; do not copy PeopleForms.
+ *
+ * Suggested next steps:
+ * 1. npm i @clerk/nextjs
+ * 2. Wrap root layout with ClerkProvider
+ * 3. Map Clerk user → chassis user via shell IdP helpers when you add them
+ */
+export const clerkStub = {
+  enabled: Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY),
+  publishableKey: process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ?? "",
+};
+`;
+}
+
+function readme({ productName, slug, port, deploy, withStripe, withClerk, db }) {
   return `# ${productName}
 
 Scaffolded with \`@llanesleonardo/create-saas\` (chassis + product shell).  
@@ -311,7 +268,6 @@ Scaffolded with \`@llanesleonardo/create-saas\` (chassis + product shell).
 
 \`\`\`bash
 # GitHub Packages auth (read:packages)
-# .npmrc is already included — set:
 #   set NODE_AUTH_TOKEN=ghp_...   (Windows)
 #   export NODE_AUTH_TOKEN=ghp_... (macOS/Linux)
 
@@ -321,21 +277,28 @@ npm run dev
 # → http://localhost:${port}
 \`\`\`
 
+Database provider: \`${db}\`${db === "postgres" ? " — set \`DATABASE_URL\` then \`npm run db:migrate\`." : "."}
+
+${withStripe ? "Stripe kit included (`/pricing`, `/api/stripe/*`)." : "Stripe kit omitted (`--no-stripe`)."}
+${withClerk ? "Clerk stub at \`src/lib/clerk-stub.ts\` — wire \`@clerk/nextjs\` yourself." : ""}
+
 ## Flow
 
 1. \`/setup\` → first admin  
 2. \`/onboarding\` → workspace  
 3. \`/workspaces\` / \`/account\`  
-4. \`/pricing\` → Stripe when env vars set  
-5. Build your domain under \`src/domain/\`
+4. Build your domain under \`src/domain/\` (or \`npx @llanesleonardo/create-saas add-domain --entity contacts\`)
+
+## CI
+
+\`.github/workflows/ci.yml\` runs typecheck + \`scripts/check-import-guard.mjs\` (blocks PeopleForms imports).
 
 ${
   deploy
     ? `## Docker / cloud
 
 - \`Dockerfile\` + \`docker-compose.yml\`
-- \`deploy/\` — Vercel, DigitalOcean, AWS, GCP (+ Azure reuse notes)
-- PeopleForms-only pieces are marked **PLACEHOLDER**
+- \`deploy/\` — Vercel, DigitalOcean, AWS, GCP (+ Azure notes)
 
 \`\`\`bash
 docker compose up --build
@@ -345,39 +308,50 @@ docker compose up --build
 }`;
 }
 
-function packageJson({ slug, port }) {
-  return `{
-  "name": "${slug}",
-  "version": "0.1.0",
-  "private": true,
-  "scripts": {
-    "dev": "next dev --port ${port}",
-    "build": "next build",
-    "build:worker": "esbuild scripts/worker.mjs --bundle --platform=node --target=node20 --format=esm --outfile=dist/worker.js --packages=external",
-    "worker": "node --import tsx scripts/worker.mjs",
-    "db:migrate": "node scripts/migrate-postgres.mjs",
-    "start": "next start --port ${port}",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
-  },
-  "dependencies": {
-    "@llanesleonardo/saas-platform": "0.3.0",
-    "@llanesleonardo/saas-product-shell": "0.2.1",
-    "better-sqlite3": "^12.11.1",
-    "next": "16.2.10",
-    "react": "19.2.4",
+function packageJson({ slug, port, db, withStripe }) {
+  const deps = {
+    "@llanesleonardo/saas-platform": PLATFORM_PIN,
+    "@llanesleonardo/saas-product-shell": SHELL_PIN,
+    next: "16.2.10",
+    react: "19.2.4",
     "react-dom": "19.2.4",
-    "stripe": "^22.3.2"
-  },
-  "devDependencies": {
-    "@types/better-sqlite3": "^7.6.13",
+  };
+  if (db !== "memory") deps["better-sqlite3"] = "^12.11.1";
+  if (db === "postgres") deps.pg = "^8.22.0";
+  if (withStripe) deps.stripe = "^22.3.2";
+
+  const devDeps = {
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "esbuild": "^0.25.0",
-    "tsx": "^4.19.0",
-    "typescript": "^5"
-  }
-}
+    esbuild: "^0.25.0",
+    tsx: "^4.19.0",
+    typescript: "^5",
+  };
+  if (db !== "memory") devDeps["@types/better-sqlite3"] = "^7.6.13";
+
+  return `${JSON.stringify(
+    {
+      name: slug,
+      version: "0.1.0",
+      private: true,
+      scripts: {
+        dev: `next dev --port ${port}`,
+        build: "next build",
+        "build:worker":
+          "esbuild scripts/worker.mjs --bundle --platform=node --target=node20 --format=esm --outfile=dist/worker.js --packages=external",
+        worker: "node --import tsx scripts/worker.mjs",
+        "db:migrate": "node scripts/migrate-postgres.mjs",
+        start: `next start --port ${port}`,
+        typecheck: "tsc -p tsconfig.json --noEmit",
+        "check:imports": "node scripts/check-import-guard.mjs",
+      },
+      dependencies: deps,
+      devDependencies: devDeps,
+    },
+    null,
+    2,
+  )}
 `;
 }
 
@@ -428,29 +402,70 @@ function npmrc() {
 `;
 }
 
-function main() {
-  const args = parseArgs(process.argv.slice(2));
-  if (args.help || !args.name || !args.prefix) {
-    usage();
-    if (!args.help) process.exit(1);
-    return;
+function removeStripeKit(dest) {
+  for (const rel of [
+    "src/app/api/stripe",
+    "src/app/pricing",
+  ]) {
+    const p = path.join(dest, rel);
+    if (fs.existsSync(p)) fs.rmSync(p, { recursive: true, force: true });
   }
+}
 
+function applyRebrand(dest, opts) {
+  const { productName, apiKeyPrefix, workspaceCookie, db, port, slug, withStripe, withClerk } =
+    opts;
+  write(
+    path.join(dest, "src", "lib", "shell.ts"),
+    shellTs({ productName, apiKeyPrefix, workspaceCookie, db }),
+  );
+  write(
+    path.join(dest, ".env.example"),
+    envExample({ slug, db, port, withStripe, withClerk, apiKeyPrefix }),
+  );
+  console.log(`rebrand OK → ${dest} (${productName})`);
+}
+
+function scaffold(args) {
   if (!fs.existsSync(path.join(TEMPLATE, "src", "app"))) {
     die(`embedded app-shell template missing at ${TEMPLATE}`);
   }
 
   const slug = slugify(args.name);
   if (!slug) die("invalid --name");
-  const prefix = ensurePrefix(args.prefix);
+  const cookiePrefix = ensurePrefix(args.cookiePrefix || args.prefix, "--prefix");
+  const apiKeyPrefix = ensurePrefix(
+    args.apiKeyPrefix || cookiePrefix,
+    "--api-key-prefix",
+  );
   const productName = args.productName?.trim() || titleCase(slug);
-  const workspaceCookie = `${prefix.replace(/_$/, "")}_workspace`;
-  const db = args.db === "memory" ? "memory" : "sqlite";
+  const workspaceCookie = `${cookiePrefix.replace(/_$/, "")}_workspace`;
+  const db = normalizeDb(args.db);
   const port = Number.isFinite(args.port) && args.port > 0 ? args.port : 3000;
+  const withStripe = args.withStripe !== false;
+  const withClerk = Boolean(args.withClerk);
 
   const dest = path.resolve(process.cwd(), args.dir ?? slug);
+
+  if (args.rebrand) {
+    if (!fs.existsSync(path.join(dest, "package.json"))) {
+      die(`--rebrand requires an existing app at ${dest}`);
+    }
+    applyRebrand(dest, {
+      productName,
+      apiKeyPrefix,
+      workspaceCookie,
+      db,
+      port,
+      slug: path.basename(dest),
+      withStripe,
+      withClerk,
+    });
+    return;
+  }
+
   if (fs.existsSync(dest) && fs.readdirSync(dest).length > 0) {
-    die(`destination not empty: ${dest}`);
+    die(`destination not empty: ${dest} (use --rebrand to update brand fields)`);
   }
 
   console.log(`create-saas: ${productName} → ${dest}`);
@@ -469,7 +484,7 @@ function main() {
 
   write(
     path.join(dest, "src", "lib", "shell.ts"),
-    shellTs({ productName, prefix, workspaceCookie, db }),
+    shellTs({ productName, apiKeyPrefix, workspaceCookie, db }),
   );
   write(path.join(dest, "src", "proxy.ts"), proxyTs());
 
@@ -496,6 +511,9 @@ function main() {
     fs.writeFileSync(f, text, "utf8");
   }
 
+  if (!withStripe) removeStripeKit(dest);
+  if (withClerk) write(path.join(dest, "src", "lib", "clerk-stub.ts"), clerkStubTs());
+
   write(
     path.join(dest, "src", "domain", "README.md"),
     `# Domain (product-owned)
@@ -504,6 +522,8 @@ Put business tables and routes here. Chassis/shell stay free of CRM/ERP types.
 
 - \`migrations/\` — optional \`postgres.sql\` baseline + \`versions/*.sql\`
 - \`jobs.ts\` — optional \`registerJobHandlers()\` for the outbox worker
+
+Add a stub: \`npx @llanesleonardo/create-saas add-domain --entity contacts --dir .\`
 `,
   );
   write(path.join(dest, "src", "domain", "migrations", "versions", ".gitkeep"), "");
@@ -511,14 +531,6 @@ Put business tables and routes here. Chassis/shell stay free of CRM/ERP types.
     path.join(dest, "src", "domain", "jobs.ts"),
     `/**
  * Optional outbox handlers. Called by scripts/worker.mjs on boot.
- *
- * import { registerJobHandler } from "@llanesleonardo/saas-platform/core";
- *
- * export function registerJobHandlers() {
- *   registerJobHandler("my_job", async (job) => {
- *     // ...
- *   });
- * }
  */
 export function registerJobHandlers() {
   // no-op until you add handlers
@@ -526,11 +538,18 @@ export function registerJobHandlers() {
 `,
   );
 
-  write(path.join(dest, "package.json"), packageJson({ slug, port }));
+  write(path.join(dest, "package.json"), packageJson({ slug, port, db, withStripe }));
   write(path.join(dest, "next.config.ts"), nextConfig());
   write(path.join(dest, "tsconfig.json"), tsconfig());
-  write(path.join(dest, ".env.example"), envExample({ slug, db, port }));
-  write(path.join(dest, "README.md"), readme({ productName, slug, port, deploy: args.deploy }));
+  write(
+    path.join(dest, ".env.example"),
+    envExample({ slug, db, port, withStripe, withClerk, apiKeyPrefix }),
+  );
+  write(path.join(dest, ".env.local"), envExample({ slug, db, port, withStripe, withClerk, apiKeyPrefix }));
+  write(
+    path.join(dest, "README.md"),
+    readme({ productName, slug, port, deploy: args.deploy, withStripe, withClerk, db }),
+  );
   write(
     path.join(dest, ".gitignore"),
     `node_modules
@@ -549,8 +568,14 @@ data
   );
   write(path.join(dest, "data", ".gitkeep"), "");
 
+  writeCiAssets(dest);
+
   if (args.deploy) {
     applyDeployTemplates(dest, { slug, productName, port });
+  }
+
+  if (args.entity) {
+    generateDomainStub(dest, args.entity);
   }
 
   console.log(`
@@ -560,14 +585,48 @@ Next:
   1. cd ${dest}
   2. set NODE_AUTH_TOKEN=<GitHub PAT with read:packages>
   3. npm install
-  4. copy .env.example → .env.local
-  5. npm run dev  → http://localhost:${port}
+  4. npm run dev  → http://localhost:${port}
+  5. npm run check:imports && npm run typecheck
 ${args.deploy ? "  6. optional: docker compose up --build\n" : ""}
-Storage (optional): set STORAGE_PROVIDER=azure|s3 in .env.local and install peers
-  (see .env.example comments).
-
-Packages used: @llanesleonardo/saas-platform@0.3.0 + saas-product-shell@0.2.1
+Pins: @llanesleonardo/saas-platform@${PLATFORM_PIN} + saas-product-shell@${SHELL_PIN}
 `);
 }
 
-main();
+async function main() {
+  const argv = process.argv.slice(2);
+  const sub = argv[0];
+
+  if (sub === "add-domain") {
+    const { run } = await import("./add-domain.mjs");
+    run(argv.slice(1));
+    return;
+  }
+  if (sub === "update-pins") {
+    const { run } = await import("./update-pins.mjs");
+    run(argv.slice(1));
+    return;
+  }
+
+  let args = parseArgs(argv);
+  if (args.help) {
+    usage();
+    return;
+  }
+
+  const needsWizard = args.wizard || !args.name || !(args.prefix || args.cookiePrefix);
+  if (needsWizard) {
+    args = await runWizard(args);
+  }
+
+  if (!args.name || !(args.prefix || args.cookiePrefix)) {
+    usage();
+    process.exit(1);
+  }
+
+  scaffold(args);
+}
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});
