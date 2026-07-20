@@ -1,13 +1,14 @@
 # Tag-only publish to GitHub Packages.
 #
-# Requires repo secret NODE_AUTH_TOKEN = GitHub PAT with write:packages
-# (read:packages if Install needs private deps later).
+# Uses GITHUB_TOKEN (packages: write). Optional PAT: secrets.NODE_AUTH_TOKEN on both
+# setup-node and publish steps if you override the default.
 name: Publish package
 
 on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -24,6 +25,8 @@ jobs:
           node-version: "20"
           registry-url: https://npm.pkg.github.com
           scope: "@llanesleonardo"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Smoke CLI
         run: node bin/create-saas.mjs --help
@@ -41,4 +44,4 @@ jobs:
       - name: Publish
         run: npm publish --access restricted
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NODE_AUTH_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
