@@ -1,0 +1,38 @@
+{
+  "name": "@llanesleonardo/create-saas",
+  "version": "0.2.2",
+  "private": false,
+  "description": "Scaffold a new SaaS app on @llanesleonardo/saas-platform + saas-product-shell (independent of PeopleForms)",
+  "type": "module",
+  "bin": {
+    "create-saas": "./bin/create-saas.mjs",
+    "create-llanes-saas": "./bin/create-saas.mjs"
+  },
+  "files": [
+    "bin",
+    "templates",
+    "README.md"
+  ],
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "restricted"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/llanesleonardo/create-saas.git"
+  },
+  "keywords": [
+    "saas",
+    "scaffold",
+    "create",
+    "nextjs",
+    "multi-tenant"
+  ],
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test:smoke": "node bin/create-saas.mjs --help"
+  }
+}

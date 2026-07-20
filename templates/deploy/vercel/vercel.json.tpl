@@ -1,0 +1,13 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "nextjs",
+  "buildCommand": "npm run build",
+  "installCommand": "npm ci",
+  "regions": ["iad1"],
+  "crons": [
+    {
+      "path": "/api/jobs/drain?limit=50",
+      "schedule": "*/2 * * * *"
+    }
+  ]
+}
