@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.5
+
+- Fix `sync-docs`: resolve `@llanesleonardo/software-patterns-docs` via package export (not `/package.json` subpath)
+- Patterns pin: `@llanesleonardo/software-patterns-docs@0.1.1` (PeopleForms SEP #68)
+
 ## 0.3.4
 
 Docs automation + shared patterns package:

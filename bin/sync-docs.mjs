@@ -80,10 +80,10 @@ export function run(argv = process.argv.slice(2)) {
 
   let syncBin;
   try {
-    const pkgJson = require.resolve("@llanesleonardo/software-patterns-docs/package.json", {
+    const pkgEntry = require.resolve("@llanesleonardo/software-patterns-docs", {
       paths: [dir, process.cwd()],
     });
-    const pkgRoot = path.dirname(pkgJson);
+    const pkgRoot = path.dirname(pkgEntry);
     syncBin = path.join(pkgRoot, "bin", "sync.mjs");
   } catch {
     die(

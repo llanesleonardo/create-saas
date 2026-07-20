@@ -36,7 +36,7 @@ const DEPLOY_TEMPLATES = path.join(PKG_ROOT, "templates");
 
 const PLATFORM_PIN = "0.3.0";
 const SHELL_PIN = "0.2.5";
-const PATTERNS_DOCS_PIN = "0.1.0";
+const PATTERNS_DOCS_PIN = "0.1.1";
 
 function copyDir(src, dest, { skip = [] } = {}) {
   ensureDir(dest);
