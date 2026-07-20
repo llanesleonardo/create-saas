@@ -35,7 +35,8 @@ const TEMPLATE = path.join(PKG_ROOT, "templates", "app-shell");
 const DEPLOY_TEMPLATES = path.join(PKG_ROOT, "templates");
 
 const PLATFORM_PIN = "0.3.0";
-const SHELL_PIN = "0.2.2";
+const SHELL_PIN = "0.2.5";
+const PATTERNS_DOCS_PIN = "0.1.0";
 
 function copyDir(src, dest, { skip = [] } = {}) {
   ensureDir(dest);
@@ -149,6 +150,7 @@ export function getDb() {
     ${JSON.stringify(db)};
   return getShellDb({
     provider,
+    // SaaS owned-cap; selfhosted create handler uses createWorkspace (unlimited).
     maxOwnedWorkspacesPerUser: 5,
   });
 }
@@ -174,10 +176,28 @@ export function authDeps(request: Request) {
 }
 
 function proxyTs() {
-  return `import { createShellProxy } from "@llanesleonardo/saas-product-shell/middleware";
+  return `import {
+  createShellProxy,
+  DEFAULT_SESSION_COOKIE,
+} from "@llanesleonardo/saas-product-shell/middleware";
+import { resolveSessionUser } from "@llanesleonardo/saas-product-shell/auth";
+import { getDb } from "@/lib/shell";
 
+/** Dual-mode: first admin + workspace required (shell docs/DUAL-MODE-TENANCY.md). */
 export const proxy = createShellProxy({
   publicExact: ["/", "/pricing"],
+  sessionCookieName: DEFAULT_SESSION_COOKIE,
+  loginPath: "/login",
+  requireFirstAdmin: { getDb },
+  requireWorkspace: {
+    getDb,
+    resolveUserId: async (sessionId) => {
+      const user = await resolveSessionUser(getDb(), sessionId);
+      return user?.id ?? null;
+    },
+    onboardingPath: "/onboarding",
+    exemptExact: ["/account"],
+  },
 });
 
 export const config = {
@@ -288,6 +308,8 @@ ${withClerk ? "Clerk stub at \`src/lib/clerk-stub.ts\` — wire \`@clerk/nextjs\
 2. \`/onboarding\` → workspace  
 3. \`/workspaces\` / \`/account\`  
 4. Build your domain under \`src/domain/\` (or \`npx @llanesleonardo/create-saas add-domain --entity contacts\`)
+5. Docs: \`docs/Components\`, \`docs/Development\`, \`docs/Software Patterns Docs\` — sync patterns with \`npx @llanesleonardo/create-saas sync-docs\`
+6. Agents: use skill **saas-docs-picture** before architectural decisions
 
 ## CI
 
@@ -321,6 +343,7 @@ function packageJson({ slug, port, db, withStripe }) {
   if (withStripe) deps.stripe = "^22.3.2";
 
   const devDeps = {
+    "@llanesleonardo/software-patterns-docs": PATTERNS_DOCS_PIN,
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
@@ -345,6 +368,7 @@ function packageJson({ slug, port, db, withStripe }) {
         start: `next start --port ${port}`,
         typecheck: "tsc -p tsconfig.json --noEmit",
         "check:imports": "node scripts/check-import-guard.mjs",
+        "docs:sync-patterns": "npx @llanesleonardo/create-saas sync-docs --dir .",
       },
       dependencies: deps,
       devDependencies: devDeps,
@@ -473,6 +497,21 @@ function scaffold(args) {
 
   copyDir(path.join(TEMPLATE, "src"), path.join(dest, "src"), { skip: ["scripts"] });
 
+  const cursorRules = path.join(TEMPLATE, ".cursor", "rules");
+  if (fs.existsSync(cursorRules)) {
+    copyDir(cursorRules, path.join(dest, ".cursor", "rules"));
+  }
+  const cursorSkills = path.join(TEMPLATE, ".cursor", "skills");
+  if (fs.existsSync(cursorSkills)) {
+    copyDir(cursorSkills, path.join(dest, ".cursor", "skills"));
+  }
+
+  // Docs: folder structure only (Components / Development / Software Patterns Docs)
+  const docsTpl = path.join(TEMPLATE, "docs");
+  if (fs.existsSync(docsTpl)) {
+    copyDir(docsTpl, path.join(dest, "docs"));
+  }
+
   for (const file of walkFiles(path.join(dest, "src"))) {
     if (!/\.(tsx?|jsx?|md)$/.test(file)) continue;
     replaceInFile(file, [
@@ -589,6 +628,7 @@ Next:
   5. npm run check:imports && npm run typecheck
 ${args.deploy ? "  6. optional: docker compose up --build\n" : ""}
 Pins: @llanesleonardo/saas-platform@${PLATFORM_PIN} + saas-product-shell@${SHELL_PIN}
+Docs: docs/{Components,Development,Software Patterns Docs} — after npm i: npm run docs:sync-patterns
 `);
 }
 
@@ -603,6 +643,11 @@ async function main() {
   }
   if (sub === "update-pins") {
     const { run } = await import("./update-pins.mjs");
+    run(argv.slice(1));
+    return;
+  }
+  if (sub === "sync-docs") {
+    const { run } = await import("./sync-docs.mjs");
     run(argv.slice(1));
     return;
   }

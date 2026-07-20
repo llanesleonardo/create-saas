@@ -1,0 +1,22 @@
+---
+description: create-saas scaffold ownership — protect dual-mode defaults; ask before breaking templates
+alwaysApply: true
+---
+
+# create-saas: scaffold ownership
+
+Templates ship the **proven** dual-mode defaults (first admin, workspace gate, AppShell chrome, billing split). Downstream apps should spend ~90% of time on **domain**, not gutting these templates.
+
+## Ask / recommend first before
+
+- Removing `requireFirstAdmin` / `requireWorkspace` from default proxy
+- Dropping AppShell sidebar / theme / workspace switcher from the template layout
+- Changing selfhosted vs saas billing defaults
+- Removing `.cursor/rules/saas-kit-protect.mdc` from the app-shell template
+
+## Do
+
+- Keep Product section as **placeholders**; Workspace/Account as real shared surfaces
+- Bump version + CHANGELOG when template standards change; pin compatible shell
+
+Domain stubs (`add-domain`) are the right place for customer-specific entities.

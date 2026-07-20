@@ -22,24 +22,29 @@ export default function OnboardingPage() {
       return;
     }
     router.push("/workspaces");
+    router.refresh();
   }
 
   return (
     <form onSubmit={onSubmit} style={{ display: "grid", gap: "0.75rem" }}>
-      <h1>Onboarding (T-02)</h1>
-      <p style={{ opacity: 0.8 }}>Create your first workspace.</p>
+      <h1>Create your workspace</h1>
+      <p style={{ opacity: 0.8 }}>
+        Required after login (saas and selfhosted). Use a team or department name — e.g.
+        Marketing, Sales, CEO Office.
+      </p>
       <label>
         Workspace name
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
           required
+          placeholder="Marketing"
           style={{ display: "block", width: "100%", padding: "0.5rem" }}
         />
       </label>
       {error && <p style={{ color: "#8b1a1a" }}>{error}</p>}
       <button type="submit" style={{ padding: "0.6rem 1rem" }}>
-        Create workspace
+        Continue
       </button>
     </form>
   );

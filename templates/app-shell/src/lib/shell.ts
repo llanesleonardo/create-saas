@@ -22,6 +22,7 @@ export function getDb() {
     (process.env.DATABASE_PROVIDER as "memory" | "sqlite" | undefined) ?? "memory";
   return getShellDb({
     provider,
+    // SaaS owned-cap; selfhosted create handler uses createWorkspace (unlimited).
     maxOwnedWorkspacesPerUser: 5,
   });
 }

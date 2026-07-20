@@ -1,0 +1,37 @@
+---
+description: Protect saas-platform / shell / create-saas structure — ask before changing; focus on domain
+alwaysApply: true
+---
+
+# SaaS kit: protect proven structure
+
+This app was scaffolded with `@llanesleonardo/create-saas` and pins `@llanesleonardo/saas-platform` + `@llanesleonardo/saas-product-shell`. That stack is a **proven** dual-mode kit. Do not silently break it.
+
+## Time split (default)
+
+| Focus | ~Effort |
+|-------|---------|
+| **Domain** (`/product/*`, `src/domain/`, product APIs) | **~90%** |
+| Platform / shell / scaffold structure | **~10%**, only after ask / explicit OK |
+
+SaaS feature upgrades happen in the **package repos**, then pin bumps — not by rewriting kits inside this app.
+
+## Ask or recommend first
+
+Before changing any of the following, **stop**: recommend (what / why / risk) and **ask for confirmation** unless the user already ordered that exact change.
+
+- Proxy gates (`requireFirstAdmin`, `requireWorkspace`, public paths)
+- `AppShellNav`, theme, workspace switcher, default Workspace/Account nav
+- Auth / setup / Log In / first-admin flow
+- Tenancy handlers, workspace cookies, onboarding
+- Billing dual-mode (saas checkout vs selfhosted matrix + invoices)
+- Package pins (`saas-platform`, `saas-product-shell`)
+- Forking or replacing shell UI kits with one-off copies
+
+**OK without asking:** domain UI under Product placeholders, branding, domain APIs/schemas, wiring product hooks (`onWorkspaceCreated`), domain bugfixes.
+
+## Do / Don’t
+
+- **Do** extend Product section + domain code; consume `@llanesleonardo/saas-product-shell/ui` and route kits
+- **Don’t** gut dual-mode tenancy, billing, or sidebar “to improve” it in-app
+- Gap in the kit → recommend package change + `npx @llanesleonardo/create-saas update-pins`

@@ -3,7 +3,7 @@
  * update-pins — Epic 13 / GAP-1508 pin helper for scaffolded apps.
  * Updates @llanesleonardo/saas-platform and saas-product-shell versions in package.json.
  *
- *   npx @llanesleonardo/create-saas update-pins --dir . --shell 0.2.2 --platform 0.3.0
+ *   npx @llanesleonardo/create-saas update-pins --dir . --shell 0.2.5 --platform 0.3.0
  *
  * HISTORY: publish of the shell package itself lives in the saas-product-shell repo
  * (scripts/release.mjs). This command only rewrites consumer pins.
@@ -23,7 +23,7 @@ export function run(argv = process.argv.slice(2)) {
     else if (argv[i] === "--platform") platform = argv[++i];
     else if (argv[i] === "--changelog") changelog = argv[++i];
     else if (argv[i] === "--help" || argv[i] === "-h") {
-      console.log(`Usage: create-saas update-pins --dir ./app [--shell 0.2.2] [--platform 0.3.0] [--changelog "note"]`);
+      console.log(`Usage: create-saas update-pins --dir ./app [--shell 0.2.5] [--platform 0.3.0] [--changelog "note"]`);
       return;
     }
   }

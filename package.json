@@ -1,6 +1,6 @@
 {
   "name": "@llanesleonardo/create-saas",
-  "version": "0.3.0",
+  "version": "0.3.4",
   "private": false,
   "description": "Scaffold a new SaaS app on @llanesleonardo/saas-platform + saas-product-shell (independent of PeopleForms). Epic 13: wizard, domain stubs, CI guard, template flags, pin helper.",
   "type": "module",
@@ -11,7 +11,8 @@
   "files": [
     "bin",
     "templates",
-    "README.md"
+    "README.md",
+    "CHANGELOG.md"
   ],
   "publishConfig": {
     "registry": "https://npm.pkg.github.com",

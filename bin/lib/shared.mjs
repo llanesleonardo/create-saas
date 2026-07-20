@@ -111,7 +111,10 @@ Options:
 
 Also:
   npx @llanesleonardo/create-saas add-domain --entity contacts --dir ./my-app
-  npx @llanesleonardo/create-saas update-pins --dir ./my-app --shell 0.2.2 --platform 0.3.0
+  npx @llanesleonardo/create-saas update-pins --dir ./my-app --shell 0.2.5 --platform 0.3.0
+  npx @llanesleonardo/create-saas sync-docs --dir ./my-app
+
+Docs scaffold: docs/Components · docs/Development · docs/Software Patterns Docs (sync patterns from @llanesleonardo/software-patterns-docs).
 
 Requires NODE_AUTH_TOKEN (GitHub PAT with read:packages) for npm install afterward.
 `);
